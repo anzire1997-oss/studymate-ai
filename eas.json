@@ -1,0 +1,19 @@
+{
+  "cli": {
+    "version": ">= 20.5.1"
+  },
+  "build": {
+    "preview": {
+      "channel": "production",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "channel": "production"
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
