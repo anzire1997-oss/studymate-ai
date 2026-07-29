@@ -1,6 +1,6 @@
 const BYNARA_API_KEY = 'sk-nry-YXSWVeM9fCwknumWgdeCwbXSAPpRR2dWP2f_2PrfT9E';
 const BYNARA_ENDPOINT = 'https://router.bynara.id/v1/chat/completions';
-const GROQ_API_KEY = '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';
+const GROQ_API_KEY = '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';
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 /** Text-only chat via ByNara (Mistral) */
 export async function generateChatResponse(prompt: string): Promise<string> {
