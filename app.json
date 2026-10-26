@@ -41,13 +41,16 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-updates",
-      "expo-build-properties"
+      "expo-build-properties",
+      "expo-font",
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "sdkVersion": "56.0.0",
+    "sdkVersion": "58.0.0",
     "extra": {
       "router": {},
       "eas": {

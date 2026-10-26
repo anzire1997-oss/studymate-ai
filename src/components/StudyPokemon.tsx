@@ -11,6 +11,8 @@ type Props = {
 type PokemonListEntry = { name: string; url: string };
 type PokemonDetails = { name: string; sprites?: { front_default?: string | null } };
 
+const FALLBACK = require("@/assets/images/Pokeball.png");
+
 let pokemonListRequest: Promise<PokemonListEntry[]> | null = null;
 
 function getPokemonList() {
@@ -50,24 +52,20 @@ export function StudyPokemon({ id, message, compact = false }: Props) {
     };
   }, [id]);
 
+  const spriteUri = pokemon?.sprites?.front_default;
   const name = pokemon?.name ? `${pokemon.name.charAt(0).toUpperCase()}${pokemon.name.slice(1)}` : "Pokémon companion";
-  const imageSource = pokemon?.sprites?.front_default ? { uri: pokemon.sprites.front_default } : require("@/assets/images/Pokeball.png");
 
   if (compact) {
     return (
       <View style={styles.compactBadge} accessibilityLabel={`Pokémon companion: ${name}`}>
-        <Image accessibilityLabel={name} source={imageSource} style={styles.compactSprite} />
+        <Image accessibilityLabel={name} source={spriteUri ? { uri: spriteUri } : FALLBACK} style={styles.compactSprite} />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Image
-        accessibilityLabel={`Pokémon companion: ${name}`}
-        source={imageSource}
-        style={styles.sprite}
-      />
+      <Image accessibilityLabel={name} source={spriteUri ? { uri: spriteUri } : FALLBACK} style={styles.sprite} />
       <View style={styles.bubble}>
         <ThemeText variant="subtitle3" color="graydark">{name}</ThemeText>
         <ThemeText variant="body3" color="grayMedium">{message}</ThemeText>

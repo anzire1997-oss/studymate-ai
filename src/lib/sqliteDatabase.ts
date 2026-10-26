@@ -36,6 +36,29 @@ export const initDatabase = async (db: SQLiteDatabase) => {
         FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
       );
 
+      -- Multiple files per lesson
+      CREATE TABLE IF NOT EXISTS course_files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        material_id INTEGER,
+        file_name TEXT,
+        file_uri TEXT,
+        file_base64 TEXT,
+        FOREIGN KEY(material_id) REFERENCES course_materials(id) ON DELETE CASCADE
+      );
+
+      -- Past exams
+      CREATE TABLE IF NOT EXISTS past_exams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER,
+        title TEXT,
+        year TEXT,
+        file_name TEXT,
+        file_uri TEXT,
+        file_base64 TEXT,
+        correction TEXT,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
       -- Calendar / Events (one-time)
       CREATE TABLE IF NOT EXISTS calendar_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,6 +135,13 @@ export const initDatabase = async (db: SQLiteDatabase) => {
       // Column already exists — ignore
     }
 
+    // Migration: add correction column to past_exams
+    try {
+      await db.execAsync('ALTER TABLE past_exams ADD COLUMN correction TEXT');
+    } catch {
+      // Column already exists — ignore
+    }
+
     console.log('Database initialized successfully.');
   } catch (error) {
     console.error('Error initializing database:', error);
@@ -136,6 +166,25 @@ export interface CourseMaterial {
   file_name: string | null;
   file_uri: string | null;
   file_base64: string | null;
+}
+
+export interface CourseFile {
+  id: number;
+  material_id: number;
+  file_name: string | null;
+  file_uri: string | null;
+  file_base64: string | null;
+}
+
+export interface PastExam {
+  id: number;
+  course_id: number;
+  title: string | null;
+  year: string | null;
+  file_name: string | null;
+  file_uri: string | null;
+  file_base64: string | null;
+  correction: string | null;
 }
 
 export interface FlashcardDeck {

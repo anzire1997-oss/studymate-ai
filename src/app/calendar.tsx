@@ -3,7 +3,7 @@ import { Card } from "@/components/card";
 import { Image } from "react-native";
 import { getThemePalette, useThemeMode } from "@/context/ThemeModeContext";
 import { useThemeColors } from "@/hooks/useThemeColors";
-import { generateImageResponse } from "@/lib/aiClient";
+import { generateChatResponse, generateImageResponse } from "@/lib/aiClient";
 import * as ImagePicker from "expo-image-picker";
 import { useSQLiteContext } from "expo-sqlite";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -165,47 +165,63 @@ export default function CalendarPage() {
       const base64 = asset.base64;
       const imageUrl = `data:image/jpeg;base64,${base64}`;
 
-      const prompt = [
+      const visionPrompt = [
         "You are a schedule extractor for the IUT TVE department.",
         "From the timetable image, extract all weekly courses.",
-        "CRUCIAL Context about Departments (ME, EEE, CSE):",
-        "Each time slot cell can be divided by horizontal lines. The top section is for 'ME', the middle section for 'EEE', and the bottom for 'CSE'.",
-        "If there are no horizontal lines in a cell, the course applies to ALL THREE departments: ['ME', 'EEE', 'CSE'].",
-        "CRUCIAL Context about Cell Content:",
-        "Inside a section, the top text is the course name (e.g. 'TVE 4425' or 'Math 4437').",
-        "The text below it (e.g. '509(2) BOA' or '509(2) SJE' or 'Av lab') is the location and teacher info.",
-        "Return ONLY a valid JSON array of objects with exactly these fields:",
-        "  - title (string): the course name (e.g., 'TVE 4425', 'Math 4437')",
-        "  - departments (string[]): array of departments this course belongs to based on its vertical position in the cell. Can be ['ME'], ['EEE'], ['CSE'], or ['ME', 'EEE', 'CSE'] if no lines.",
-        "  - day_of_week (number): 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday",
-        "  - start_time (string): start time formatted as HH:MM (e.g., '08:00')",
-        "  - end_time (string): end time formatted as HH:MM (e.g., '09:15')",
-        "  - location (string): the bottom text in the cell (e.g. '509(2) BOA'), otherwise empty string",
-        "IMPORTANT: DO NOT output any step-by-step analysis, reasoning, or extra text. Output ONLY the JSON array. Starting with [ and ending with ]."
+        "CRUCIAL: cells have top (ME), middle (EEE), bottom (CSE) sections. No dividers = applies to ALL THREE: ['ME', 'EEE', 'CSE'].",
+        "Return ONLY a JSON array with each object having:",
+        "  title (course code), departments (['ME']|['EEE']|['CSE']|['ME','EEE','CSE']), day_of_week (0=Sun..6=Sat), start_time (HH:MM), end_time (HH:MM), location (room+teacher).",
+        "Start with [ and end with ]. No extra text."
       ].join("\\n");
 
-      let response: string;
+      let visionResponse: string;
       try {
-        response = await generateImageResponse(prompt, imageUrl);
+        visionResponse = await generateImageResponse(visionPrompt, imageUrl);
       } catch (e: any) {
         console.error('Error sending image to API', e);
         setExtractedInfo(`Send error: ${e.message || e}`);
         return;
       }
 
-      if (!response) {
+      if (!visionResponse) {
         setExtractedInfo("No response received.");
         return;
       }
 
-      try {
-        // Robustly extract the JSON array (from first '[' to last ']')
-        const match = response.match(/\[[\s\S]*\]/);
-        if (!match) {
-          throw new Error("No JSON array found in the AI response.");
+      // Try to parse JSON directly from vision response
+      let parsed: any;
+      let cleaned = visionResponse.replace(/<\/?think>/g, '').trim();
+      let jsonStart = cleaned.indexOf('[');
+      let jsonEnd = -1;
+      if (jsonStart !== -1) {
+        let depth = 0;
+        for (let i = jsonStart; i < cleaned.length; i++) {
+          if (cleaned[i] === '[') depth++;
+          else if (cleaned[i] === ']') { depth--; if (depth === 0) { jsonEnd = i; break; } }
         }
-        
-        const parsed = JSON.parse(match[0]);
+      }
+      const maybeJson = jsonStart !== -1 && jsonEnd !== -1 ? cleaned.slice(jsonStart, jsonEnd + 1) : null;
+      if (maybeJson) {
+        try { parsed = JSON.parse(maybeJson); } catch {}
+      }
+
+      // Fallback: send vision text to Mistral to parse
+      if (!parsed) {
+        const textForMistral = cleaned.slice(0, 4000);
+        const parsePrompt = [
+          "Extract weekly schedule data from the text below as a JSON array.",
+          "Each object must have: title (string), departments (string[]), day_of_week (number: 0=Sun..6=Sat), start_time (HH:MM), end_time (HH:MM), location (string).",
+          "If a course is shared by ME/EEE/CSE set departments to ['ALL'].",
+          "Output ONLY the JSON array. Start with [ and end with ].",
+          "---",
+          textForMistral
+        ].join("\\n");
+        const mistralResp = await generateChatResponse(parsePrompt);
+        const match = mistralResp.match(/\[[\s\S]*\]/);
+        if (!match) throw new Error("No JSON array found.");
+        parsed = JSON.parse(match[0]);
+      }
+      try {
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Initialize the three fixed departments
           await db.execAsync(`
@@ -251,7 +267,7 @@ export default function CalendarPage() {
               // Insert the weekly schedule
               await db.runAsync(
                 'INSERT INTO course_schedules (course_id, day_of_week, start_time, end_time, location) VALUES (?, ?, ?, ?, ?)', 
-                [courseId, item.day_of_week, item.start_time, item.end_time, item.location || '']
+                [courseId, Number(item.day_of_week), item.start_time, item.end_time, item.location || '']
               );
             }
           }
@@ -262,7 +278,7 @@ export default function CalendarPage() {
           setExtractedInfo("No events detected.");
         }
       } catch (e: any) {
-        console.error('JSON Parse Error:', e, 'Raw Response:', response);
+        console.error('JSON Parse Error:', e, 'Raw Response:', visionResponse);
         setExtractedInfo("Error parsing AI data.");
       }
     } catch (e) {
@@ -316,7 +332,7 @@ export default function CalendarPage() {
                       const dayMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5 };
                       const dayIndex = dayMap[`${day}`];
                       const ev = allSchedules.find(
-                        (e) => e.day === dayIndex && e.time === `${hour}`
+                        (e) => Number(e.day) === dayIndex && e.time === `${hour}`
                       );
                       return ev
                         ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${ev.id}.png`

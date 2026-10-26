@@ -7,7 +7,7 @@ import { useSQLiteContext } from "expo-sqlite";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { generateChatResponse } from "@/lib/aiClient";
+import { generateChatResponse, extractFirstJsonArray } from "@/lib/aiClient";
 import PdfTextExtractor from "@/components/PdfTextExtractor";
 import { Quiz, QuizQuestion } from "@/lib/sqliteDatabase";
 import { StudyPokemon } from "@/components/StudyPokemon";
@@ -46,12 +46,24 @@ export default function QuizPage() {
     try {
       setQuiz(null);
       setQuestions([]);
-      const mat = await db.getFirstAsync<{ lecture_name: string; file_uri: string | null; file_base64: string | null }>(
-        'SELECT lecture_name, file_uri, file_base64 FROM course_materials WHERE id = ?', [matId]
+      const mat = await db.getFirstAsync<{ lecture_name: string }>(
+        'SELECT lecture_name FROM course_materials WHERE id = ?', [matId]
       );
       if (mat) {
         setLectureName(mat.lecture_name);
-        setFileBase64(mat.file_base64);
+      }
+
+      // Get first PDF (prefer course_files, fallback to legacy columns)
+      const firstFile = await db.getFirstAsync<{ file_base64: string | null }>(
+        'SELECT file_base64 FROM course_files WHERE material_id = ? ORDER BY id ASC LIMIT 1', [matId]
+      );
+      if (firstFile) {
+        setFileBase64(firstFile.file_base64);
+      } else {
+        const legacy = await db.getFirstAsync<{ file_base64: string | null }>(
+          'SELECT file_base64 FROM course_materials WHERE id = ?', [matId]
+        );
+        setFileBase64(legacy?.file_base64 ?? null);
       }
 
       const existingQuiz = await db.getFirstAsync<Quiz>(
@@ -106,9 +118,9 @@ export default function QuizPage() {
 
       const response = await generateChatResponse(prompt + promptEnd);
 
-      const match = response.match(/\[[\s\S]*\]/);
-      if (!match) throw new Error("No JSON array found in the response.");
-      const parsed = JSON.parse(match[0]) as ParsedQuestion[];
+      const jsonStr = extractFirstJsonArray(response);
+      if (!jsonStr) throw new Error("No JSON array found in the response.");
+      const parsed = JSON.parse(jsonStr) as ParsedQuestion[];
 
       if (!Array.isArray(parsed) || parsed.length === 0 || parsed.some((question) =>
         !question?.question?.trim()

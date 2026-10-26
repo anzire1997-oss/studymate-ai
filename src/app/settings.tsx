@@ -34,6 +34,8 @@ export default function SettingsPage() {
                 DELETE FROM flashcard_decks;
                 DELETE FROM course_schedules;
                 DELETE FROM calendar_events;
+                DELETE FROM course_files;
+                DELETE FROM past_exams;
                 DELETE FROM course_materials;
                 DELETE FROM courses;
                 DELETE FROM departments;
